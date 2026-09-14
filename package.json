@@ -1,0 +1,27 @@
+{
+  "name": "xiqianhua-volume-one",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx server/index.ts",
+    "build": "tsc --noEmit && vite build",
+    "start": "tsx server/index.ts --production",
+    "test": "tsx --test tests/*.test.ts"
+  },
+  "dependencies": {
+    "express": "5.2.1",
+    "phaser": "3.90.0",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^24.0.0",
+    "tsx": "4.23.13",
+    "typescript": "5.9.3",
+    "vite": "8.3.0"
+  },
+  "engines": {
+    "node": ">=22.12"
+  }
+}
