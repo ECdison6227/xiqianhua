@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "projectName": "洗铅华",
+  "projectSlug": "洗铅华",
+  "oauth": {
+    "enabled": true,
+    "appId": "741",
+    "redirectUri": "https://edsionc.top/xiqianhua/auth/callback",
+    "credentialService": "zhihu-hackathon:洗铅华:7b832eb7fb",
+    "credentialAccount": "oauth-app-key",
+    "allowMissingState": true
+  },
+  "host": "127.0.0.1",
+  "port": 3911
+}

@@ -2,7 +2,7 @@
 
 以华浅的视角走进故事：视觉小说主线、九段 2D 探索、酒楼六人物实时问答与带来源的手记。
 
-[在线游玩](https://edsionc.top/xiqianhua/) · [项目介绍](https://edsionc.top/xiqianhua/presentation.html)
+[在线游玩](https://edsionc.top/xiqianhua/) · [项目介绍](https://edsionc.top/xiqianhuav)
 
 ## 快速体验
 
@@ -45,7 +45,15 @@ npm test
 
 当前交付为浏览器整合版。原 Godot 交接包保留在制作工作区，不作为本仓库的另一份已验证发行版。
 
-实现了九段探索、酒楼六人物问答、携证追问、来源手记、剧情小游戏、四款独立游艺及卷一阅读功能。尚未接入知乎 OAuth、知乎内容写入、多用户社交、全局记忆图谱或模型驱动的导演调度；知乎入口是话题搜索链接。
+实现了九段探索、酒楼六人物问答、携证追问、来源手记、剧情小游戏、四款独立游艺及卷一阅读功能。已提供知乎连接入口、OAuth 回调和五项授权接口核验；真实登录仍待配置 Access Secret 并由用户确认授权。尚未实现知乎内容写入、多用户社交、全局记忆图谱或模型驱动的导演调度。
+
+## 知乎账号接入
+
+首页「关于 → 知乎账号连接」。登记回调应精确为 `https://edsionc.top/xiqianhua/auth/callback`。已按官方 Hackathon Skill 初始化，项目内保留原版 `.codex/skills/zhihu/`。公开配置在 `hackathon.config.json`，不包含凭据。
+
+服务器私有环境需要 `ZHIHU_OAUTH_APP_KEY` 与 `ZHIHU_ACCESS_SECRET`；macOS 可从钥匙串读取。用户必须亲自确认知乎授权。未登录也可游玩，连接与断开不更改浏览器存档。
+
+26 项本地检查通过，其中 7 项为 OAuth 模拟接口检查，不能替代真实授权。当前线上仍缺 Access Secret。官方现阶段可能不回传 state，本项目沿用临时联调兼容模式并在界面标明。详见 [接入说明](docs/zhihu-integration.md)。
 
 ## 来源与许可
 

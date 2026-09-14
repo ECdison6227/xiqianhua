@@ -4,9 +4,10 @@ import { z } from 'zod';
 import { GameService, GameError } from './service';
 import { ProviderError, type Provider } from './providers';
 import type { Server } from 'node:http';
+import {mountZhihu,type ZhihuConfig} from './zhihu';
 
 export const TalkBody=z.object({sessionId:z.uuid(),requestId:z.uuid(),npcId:z.enum(['pipa','blue','grey','huashen','keeper','waiter']),evidenceId:z.string().max(40).optional(),question:z.string().trim().min(1).max(500),mode:z.enum(['ai','preset']).default('ai'),position:z.object({x:z.number().finite(),y:z.number().finite()}).strict()}).strict();
-export function createApp(options:{dataDir:string;provider:Provider;story:{id:string;speaker:string;character:string;text:string}[]}){
+export function createApp(options:{dataDir:string;provider:Provider;story:{id:string;speaker:string;character:string;text:string}[];oauth?:ZhihuConfig}){
   const app=express();const service=new GameService(options.dataDir,options.provider,options.story.length);
   app.disable('x-powered-by');
   app.set('trust proxy','loopback');
@@ -35,6 +36,7 @@ export function createApp(options:{dataDir:string;provider:Provider;story:{id:st
     next();
   });
   app.use(express.json({limit:'12kb'}));
+  if(options.oauth)mountZhihu(app,options.oauth);
   const route=(fn:(req:express.Request,res:express.Response)=>Promise<void>)=>(req:express.Request,res:express.Response,next:express.NextFunction)=>{fn(req,res).catch(next);};
   app.get('/api/health',(_req,res)=>res.json({ok:true,provider:options.provider.tag,configured:options.provider.configured!==false}));
   app.post('/api/sessions',route(async(_req,res)=>{res.status(201).json(await service.create());}));
