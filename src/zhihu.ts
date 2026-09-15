@@ -2,7 +2,7 @@ import {BASE,esc} from './core';
 
 export async function showZhihuAccount(container:HTMLElement){
   async function request(path:string,method='GET'){
-    const response=await fetch(`${BASE}api/oauth/${path}`,{method,credentials:'same-origin',signal:AbortSignal.timeout(30000),...(method==='POST'?{headers:{'Content-Type':'application/json'},body:'{}'}:{})});
+    const response=await fetch(`${BASE}api/oauth/${path}`,{method,credentials:'same-origin',signal:AbortSignal.timeout(path==='verify'?60000:30000),...(method==='POST'?{headers:{'Content-Type':'application/json'},body:'{}'}:{})});
     const data=await response.json();if(!response.ok)throw new Error(data.message??'连接暂时不可用，请稍后再试。');return data;
   }
   try{
@@ -18,7 +18,7 @@ export async function showZhihuAccount(container:HTMLElement){
     const result=container.querySelector<HTMLElement>('#zhihu-result')!;
     container.querySelector<HTMLButtonElement>('#zhihu-verify')?.addEventListener('click',async(event)=>{
       const button=event.currentTarget as HTMLButtonElement;button.disabled=true;result.textContent='正在逐项核验，每个接口最多读取一条记录…';
-      try{const data=await request('verify','POST');if(container.isConnected)result.innerHTML='<ul>'+data.results.map((r:{name:string;status:string;count:number})=>`<li>${esc(r.name)}：${({success:'成功',empty:'无记录',error:'暂未通过',skipped:'未执行'} as Record<string,string>)[r.status]??'暂未通过'}</li>`).join('')+'</ul>';}
+      try{const data=await request('verify','POST');if(container.isConnected)result.innerHTML='<ul>'+data.results.map((r:{name:string;status:string;count:number;message?:string;code?:number})=>`<li>${esc(r.name)}：${({success:'成功',empty:'无记录',error:'暂未通过',skipped:'未执行'} as Record<string,string>)[r.status]??'暂未通过'}${r.message?`<p class="subtle">${esc(r.message)}${typeof r.code==='number'?`（错误编号 ${r.code}）`:''}</p>`:''}</li>`).join('')+'</ul>';}
       catch(e){result.textContent=e instanceof Error?e.message:'核验暂未完成。';}finally{button.disabled=false;}
     });
     container.querySelector<HTMLButtonElement>('#zhihu-logout')?.addEventListener('click',async()=>{

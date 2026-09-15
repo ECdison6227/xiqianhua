@@ -7,6 +7,7 @@ import type {AddressInfo} from 'node:net';
 import {createApp} from '../server/app';
 import {presetProvider} from '../server/providers';
 import type {ZhihuConfig} from '../server/zhihu';
+import {decodeKeychainValue} from '../server/keychain';
 
 const redirect='https://edsionc.top/xiqianhua/auth/callback';
 async function fixture(t:TestContext,overrides:Partial<ZhihuConfig>={}){
@@ -57,4 +58,28 @@ test('OAuth: expiry and service restart drop authorization',async t=>{
 });
 test('OAuth: auth rejection stops remaining user requests without own-identity fallback',async t=>{
   const calls:string[]=[];const f=await fixture(t,{fetcher:async(url)=>{calls.push(String(url));return Response.json(String(url).endsWith('/access_token')?{access_token:'test-token'}:{Code:20001});}});const cookie=await f.login();const result=await(await f.request('/api/oauth/verify',cookie,'POST')).json();assert.equal(result.results[0].status,'error');assert.ok(result.results.slice(1).every((x:{status:string})=>x.status==='skipped'));assert.equal(calls.filter(x=>x.includes('/api/v1/user/')).length,1);assert.equal((await(await f.request('/api/oauth/status',cookie)).json()).authorized,false);
+});
+test('OAuth: failed favorites list skips dependent contents and never reports an empty list',async t=>{
+  const urls:string[]=[];
+  const f=await fixture(t,{fetcher:async(url)=>{const value=String(url);urls.push(value);return Response.json(value.endsWith('/access_token')?{access_token:'test-token'}:value.includes('/favlists?')?{Code:12345,Message:'test-secret must never be displayed'}:{Code:0,Data:{Items:[]}});}});
+  const cookie=await f.login(),data=await(await f.request('/api/oauth/verify',cookie,'POST')).json();
+  assert.equal(data.results[2].status,'error');assert.equal(data.results[2].code,12345);assert.equal(data.results[3].status,'skipped');assert.equal(data.results[4].status,'empty');assert.match(data.results[3].message,/尚未读取/);assert.doesNotMatch(JSON.stringify(data),/test-secret/);assert.ok(!urls.some(u=>u.includes('/favlist_contents?')));
+});
+test('OAuth: confirmed empty favorites list is distinguished from malformed upstream data',async t=>{
+  for(const items of [[],null,[{}]]){
+    const f=await fixture(t,{fetcher:async(url)=>Response.json(String(url).endsWith('/access_token')?{access_token:'test-token'}:{Code:0,Data:{Items:String(url).includes('/favlists?')?items:[]}})});
+    const cookie=await f.login(),data=await(await f.request('/api/oauth/verify',cookie,'POST')).json();
+    const empty=Array.isArray(items)&&items.length===0;
+    assert.equal(data.results[2].status,empty?'empty':'error');assert.equal(data.results[3].status,empty?'empty':'skipped');
+    if(!empty)assert.match(data.results[2].message,/格式不完整/);
+  }
+});
+test('OAuth: transport errors include only a fixed explanation and safe status code',async t=>{
+  const f=await fixture(t,{fetcher:async(url)=>String(url).includes('/favlists?')?new Response('sensitive upstream response',{status:503}):Response.json(String(url).endsWith('/access_token')?{access_token:'test-token'}:{Code:0,Data:{Items:[]}})});
+  const cookie=await f.login(),data=await(await f.request('/api/oauth/verify',cookie,'POST')).json();assert.equal(data.results[2].code,503);assert.equal(data.results[3].status,'skipped');assert.doesNotMatch(JSON.stringify(data),/sensitive upstream/);
+});
+test('macOS credentials support official CLI keyring encoding and plain app keys',()=>{
+  assert.equal(decodeKeychainValue('plain-test-app\n'),'plain-test-app');
+  assert.equal(decodeKeychainValue('go-keyring-base64:'+Buffer.from('test-secret').toString('base64')),'test-secret');
+  assert.equal(decodeKeychainValue('go-keyring-base64:bad!!'),'');
 });

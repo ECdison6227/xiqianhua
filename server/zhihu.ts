@@ -24,7 +24,7 @@ const messages:Record<string,string>={
   busy:'正在核验，请稍候。',
   rate:'连接尝试较多，请稍后再试。',
 };
-class OAuthError extends Error {constructor(public kind:string){super(messages[kind]??messages.exchange);}}
+class OAuthError extends Error {constructor(public kind:string,public upstreamCode?:number){super(messages[kind]??messages.exchange);}}
 const equal=(a:string,b:string)=>{const x=Buffer.from(a),y=Buffer.from(b);return x.length===y.length&&timingSafeEqual(x,y);};
 const text=(x:unknown)=>typeof x==='string'?x.slice(0,160):null;
 
@@ -37,9 +37,9 @@ export function mountZhihu(app:Express,config:ZhihuConfig){
   function cookie(res:Response,id:string,maxAge=28800){res.setHeader('Set-Cookie',`${COOKIE}=${id}; Path=/xiqianhua; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${config.secureCookie!==false?'; Secure':''}`);}
   function find(req:Request){const id=(req.headers.cookie??'').split(';').map(v=>v.trim()).find(v=>v.startsWith(COOKIE+'='))?.slice(COOKIE.length+1)??'';const s=sessions.get(id);if(s&&s.expires<=now()){sessions.delete(id);return {id,s:undefined};}if(s?.token&&(!s.tokenExpires||s.tokenExpires<=now())){delete s.token;delete s.profile;s.error='expired';}return {id,s};}
   function fresh(res:Response,s:Session={expires:now()+28800000}){for(const [id,v]of sessions)if(v.expires<=now())sessions.delete(id);if(sessions.size>=2000)sessions.delete(sessions.keys().next().value!);const id=randomBytes(32).toString('base64url');sessions.set(id,s);cookie(res,id);return {id,s};}
-  async function json(url:string,init:RequestInit={}){const response=await fetcher(url,{...init,signal:AbortSignal.timeout(25000),redirect:'error'});if(response.status===401||response.status===403)throw new OAuthError('expired');if(!response.ok)throw new OAuthError('exchange');return response.json();}
+  async function json(url:string,init:RequestInit={},timeout=25000){const response=await fetcher(url,{...init,signal:AbortSignal.timeout(timeout),redirect:'error'});if(response.status===401||response.status===403)throw new OAuthError('expired',response.status);if(!response.ok)throw new OAuthError('http',response.status);return response.json();}
   const safe=(fn:(req:Request,res:Response)=>Promise<void>)=>(req:Request,res:Response)=>{void fn(req,res).catch(e=>res.status(e instanceof OAuthError&&e.kind==='login'?401:503).json({error:e instanceof OAuthError?e.kind:'exchange',message:e instanceof OAuthError?e.message:messages.exchange}));};
-  async function userGet(endpoint:string,token:string,secret:string){return json(endpoint,{headers:{Authorization:`Bearer ${secret}`,'X-OAuth-Token':token,'X-Request-Timestamp':String(Math.floor(now()/1000)),'Content-Type':'application/json'}});}
+  async function userGet(endpoint:string,token:string,secret:string){return json(endpoint,{headers:{Authorization:`Bearer ${secret}`,'X-OAuth-Token':token,'X-Request-Timestamp':String(Math.floor(now()/1000)),'Content-Type':'application/json'}},10000);}
   app.get('/api/oauth/status',safe(async(req,res)=>{const {s}=find(req),c=await config.credentials();res.json({configured:!!(c.appKey&&c.accessSecret),appId:config.appId,redirectUri:config.redirectUri,authorized:!!s?.token,profile:s?.profile??null,stateVerified:s?.stateVerified??null,temporaryIntegration:config.allowMissingState===true,expiresAt:s?.tokenExpires?new Date(s.tokenExpires).toISOString():null,message:s?.error?messages[s.error]:null});}));
   app.get('/api/oauth/start',safe(async(req,res)=>{
     const c=await config.credentials();if(!c.appKey||!c.accessSecret)throw new OAuthError('credentials');
@@ -78,7 +78,7 @@ export function mountZhihu(app:Express,config:ZhihuConfig){
     const {s}=find(req);if(!s?.token)throw new OAuthError('login');if(s.checking)throw new OAuthError('busy');
     const {accessSecret}=await config.credentials();if(!accessSecret)throw new OAuthError('credentials');s.checking=true;
     try{
-      const results:{id:string;name:string;status:string;count:number}[]=[];let favlist:string|undefined;let denied=false;const token=s.token;
+      const results:{id:string;name:string;status:string;count:number;message?:string;code?:number}[]=[];let favlist:string|undefined;let favlistsState:'pending'|'empty'|'success'='pending';let denied=false;const token=s.token;
       for(const [id,name,endpoint,query]of [
         ['contents','创作内容','contents',{ContentType:'all',Offset:'0',SortField:'ts',SortOrder:'desc'}],
         ['followees','关注用户','followees',{Offset:'0'}],
@@ -86,10 +86,29 @@ export function mountZhihu(app:Express,config:ZhihuConfig){
         ['favlist_contents','收藏夹内容','favlist_contents',{Offset:'0'}],
         ['collections','近期收藏','collections',{}],
       ] as [string,string,string,Record<string,string>][]){
-        if(denied){results.push({id,name,status:'skipped',count:0});continue;}
-        if(id==='favlist_contents'&&!favlist){results.push({id,name,status:'empty',count:0});continue;}
-        try{const q=new URLSearchParams({...query,Limit:'1',...(id==='favlist_contents'?{FavlistUrlToken:favlist!}:{})});const result=await userGet(`https://developer.zhihu.com/api/v1/user/${endpoint}?${q}`,token,accessSecret);if(result?.Code===20001)throw new OAuthError('expired');if(result?.Code!==0)throw new OAuthError('exchange');const items=result?.Data?.Items;if(!Array.isArray(items))throw new OAuthError('exchange');if(id==='favlists'&&items[0]?.UrlToken)favlist=String(items[0].UrlToken);results.push({id,name,status:items.length?'success':'empty',count:Math.min(items.length,1)});}catch(e){results.push({id,name,status:'error',count:0});if(e instanceof OAuthError&&e.kind==='expired'){denied=true;delete s.token;delete s.profile;s.error='expired';}}
+        if(denied){results.push({id,name,status:'skipped',count:0,message:'授权失效，已停止查询。'});continue;}
+        if(id==='favlist_contents'&&!favlist){results.push({id,name,status:favlistsState==='empty'?'empty':'skipped',count:0,message:favlistsState==='empty'?'没有可查询的公开收藏夹。':'收藏夹列表尚未读取，暂未查询其中内容。'});continue;}
+        try{
+          const q=new URLSearchParams({...query,Limit:'1',...(id==='favlist_contents'?{FavlistUrlToken:favlist!}:{})});
+          const result=await userGet(`https://developer.zhihu.com/api/v1/user/${endpoint}?${q}`,token,accessSecret);
+          if(result?.Code===20001)throw new OAuthError('expired',20001);
+          if(result?.Code!==0)throw new OAuthError('upstream',typeof result?.Code==='number'?result.Code:undefined);
+          const items=result?.Data?.Items;if(!Array.isArray(items))throw new OAuthError('shape');
+          if(id==='favlists'){
+            if(items.length){const idValue=items[0]?.UrlToken;if(!['string','number'].includes(typeof idValue)||!/^\d+$/.test(String(idValue))||String(idValue)==='0')throw new OAuthError('shape');favlist=String(idValue);favlistsState='success';}
+            else favlistsState='empty';
+          }
+          results.push({id,name,status:items.length?'success':'empty',count:Math.min(items.length,1)});
+        }catch(e){
+          const kind=e instanceof OAuthError?e.kind:'network';
+          const message=kind==='expired'?'授权失效，请重新连接。':kind==='shape'?'知乎返回的数据格式不完整。':kind==='network'?'连接超时或网络中断，可稍后重新核验。':'知乎接口暂未完成请求，可稍后重新核验。';
+          const code=e instanceof OAuthError&&Number.isSafeInteger(e.upstreamCode)?e.upstreamCode:undefined;
+          results.push({id,name,status:'error',count:0,message,...(code!==undefined?{code}:{})});
+          if(kind==='expired'){denied=true;delete s.token;delete s.profile;s.error='expired';}
+        }
       }
+      // Operational evidence contains only result categories, never tokens or user records.
+      console.info(JSON.stringify({event:'zhihu-oauth-verification',at:new Date(now()).toISOString(),stateVerified:s.stateVerified,results}));
       res.json({results});
     }finally{s.checking=false;}
   }));

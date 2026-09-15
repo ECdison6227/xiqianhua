@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import express from 'express';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
+import {decodeKeychainValue} from './keychain';
 import { createApp } from './app';
 import { providerFromEnv } from './providers';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
@@ -12,7 +13,7 @@ const provider=providerFromEnv(process.env);
 const story=JSON.parse(readFileSync(path.join(root,'server/story.json'),'utf8'));
 const configFile=path.join(root,'hackathon.config.json');
 const oauthConfig=existsSync(configFile)?JSON.parse(readFileSync(configFile,'utf8')).oauth:null;
-const keychain=async(service:string,account:string)=>{if(process.platform!=='darwin')return undefined;try{return (await promisify(execFile)('/usr/bin/security',['find-generic-password','-s',service,'-a',account,'-w'])).stdout.trim();}catch{return undefined;}};
+const keychain=async(service:string,account:string)=>{if(process.platform!=='darwin')return undefined;try{return decodeKeychainValue((await promisify(execFile)('/usr/bin/security',['find-generic-password','-s',service,'-a',account,'-w'])).stdout)||undefined;}catch{return undefined;}};
 const {app}=createApp({dataDir:path.join(root,'.runtime/sessions'),provider,story,...(oauthConfig?.enabled?{oauth:{appId:oauthConfig.appId,redirectUri:oauthConfig.redirectUri,allowMissingState:oauthConfig.allowMissingState===true,credentials:async()=>({appKey:process.env.ZHIHU_OAUTH_APP_KEY||await keychain(oauthConfig.credentialService,oauthConfig.credentialAccount),accessSecret:process.env.ZHIHU_ACCESS_SECRET||await keychain('zhihu-cli','access-secret')})}}:{})});
 if(process.argv.includes('--production')){
   app.use(express.static(path.join(root,'dist'),{dotfiles:'deny'}));
