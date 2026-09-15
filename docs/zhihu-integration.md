@@ -16,7 +16,7 @@
 
 ## 仍待真实验证
 
-尚缺 Access Secret，它与 OAuth App Key 不同。应在 https://developer.zhihu.com/profile 生成，按官方 CLI 流程保存，并加入服务器私有环境 ZHIHU_ACCESS_SECRET。之后由用户亲自点击知乎授权页最终确认，再核验五项接口。不能将模拟检查记作真实授权成功。
+Access Secret 已通过官方 CLI 保存到本机钥匙串，并加入服务器私有环境 ZHIHU_ACCESS_SECRET。官方 auth status --verify 通过，me contents --type all --limit 1 成功读取一条记录，仅记录成功与数量，不保存用户内容。服务器配置就绪，授权入口已指向知乎官方页面和登记的专用回调。下一步由用户亲自点击知乎授权页最终确认，再核验五项 OAuth 接口；开发者凭据验证不等于用户 OAuth 登录成功。
 
 官方现阶段可能不回传 state。当前 allowMissingState=true 仅沿用官方临时联调模式；仍要求同一浏览器的未过期授权 Cookie，回传 state 时必须匹配，未回传则显示提示。正式上线前应按平台能力补齐完整回调校验。设为 false 可关闭缺失 state 的兼容。
 
@@ -26,4 +26,4 @@
 
 ## 核验范围
 
-26 项游戏与接口检查通过，其中 7 项覆盖 OAuth 凭据缺失、状态匹配、重复回调、Cookie 更新、旧回调、五项 API 边界、到期与重启、鉴权失败终止。检查使用模拟响应。独立官方示例 2 项测试及语法检查通过，官方 doctor 的 readyForOAuth 为 false（缺 Access Secret）。
+26 项游戏与接口检查通过，其中 7 项覆盖 OAuth 凭据缺失、状态匹配、重复回调、Cookie 更新、旧回调、五项 API 边界、到期与重启、鉴权失败终止。检查使用模拟响应。独立官方示例 2 项测试及语法检查通过。凭据在线验证与最小本人内容请求通过；五项 OAuth 接口的真实结果仍待用户授权后记录。
